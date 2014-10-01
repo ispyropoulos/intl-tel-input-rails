@@ -21,12 +21,12 @@ Or install it yourself as:
 
 Add the following directive to your Javascript manifest file:
 
-    //= require intl-tel-input
+    //= require intlTelInput
 
 Coffeescript flavor:
 
-    #= require intl-tel-input
+    #= require intlTelInput
 
 ## Versioning
 
-rsvpjs-rails 3.4.0 == intl-tel-input 3.4.0
+intl-tel-input-rails 3.4.0.1 == intl-tel-input 3.4.0
