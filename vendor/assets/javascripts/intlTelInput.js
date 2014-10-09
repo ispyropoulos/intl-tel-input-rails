@@ -1,5 +1,5 @@
 /*
-International Telephone Input v3.3.0
+International Telephone Input v3.6.0
 https://github.com/Bluefieldscom/intl-tel-input.git
 */
 // wrap in UMD - see https://github.com/umdjs/umd/blob/master/jqueryPlugin.js
@@ -23,6 +23,8 @@ https://github.com/Bluefieldscom/intl-tel-input.git
         defaultCountry: "",
         // don't insert international dial codes
         nationalMode: false,
+        // number type to use for placeholders
+        numberType: "",
         // display only these countries
         onlyCountries: [],
         // the countries at the top of the list. defaults to united states and united kingdom
@@ -239,21 +241,22 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                 this._selectFlag(defaultCountry.iso2);
                 // if empty, insert the default dial code (this function will check !nationalMode and !autoHideDialCode)
                 if (!val) {
-                    this._resetToDialCode(defaultCountry.dialCode);
+                    this._updateDialCode(defaultCountry.dialCode, false);
                 }
             }
             // format
             if (val) {
-                // this wont be run after _resetToDialCode as that's only called if val is empty
+                // this wont be run after _updateDialCode as that's only called if no val
                 this._updateVal(val, false);
             }
         },
         // initialise the main event listeners: input keyup, and click selected flag
         _initListeners: function() {
             var that = this;
-            // auto hide dial code option
-            if (this.options.autoHideDialCode) {
-                this._initAutoHideDialCode();
+            this._initKeyListeners();
+            // autoFormat prevents the change event from firing, so we need to check for changes between focus and blur in order to manually trigger it
+            if (this.options.autoHideDialCode || this.options.autoFormat) {
+                this._initFocusListeners();
             }
             // hack for input nested inside label: clicking the selected-flag to open the dropdown would then automatically trigger a 2nd click on the input which would close it again
             var label = this.telInput.closest("label");
@@ -267,60 +270,6 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                     }
                 });
             }
-            if (this.options.autoFormat) {
-                // format number and update flag on keypress
-                // use keypress event as we want to ignore all input except for a select few keys,
-                // but we dont want to ignore the navigation keys like the arrows etc.
-                // NOTE: no point in refactoring this to only bind these listeners on focus/blur because then you would need to have those 2 listeners running the whole time anyway...
-                this.telInput.on("keypress" + this.ns, function(e) {
-                    // 32 is space, and after that it's all chars (not meta/nav keys)
-                    // this fix is needed for Firefox, which triggers keypress event for some meta/nav keys
-                    // Update: also ignore if this is a metaKey e.g. FF and Safari trigger keypress on the v of Ctrl+v
-                    if (e.which >= keys.SPACE && !e.metaKey) {
-                        e.preventDefault();
-                        // allowed keys are just numeric keys and plus
-                        // we must allow plus for the case where the user does select-all and then hits plus to start typing a new number. we could refine this logic to first check that the selection contains a plus, but that wont work in old browsers, and I think it's overkill anyway
-                        var isAllowedKey = e.which >= keys.ZERO && e.which <= keys.NINE || e.which == keys.PLUS, input = that.telInput[0], noSelection = that.isGoodBrowser && input.selectionStart == input.selectionEnd, max = that.telInput.attr("maxlength"), // assumes that if max exists, it is >0
-                        isBelowMax = max ? that.telInput.val().length < max : true;
-                        // first: ensure we dont go over maxlength. we must do this here to prevent adding digits in the middle of the number
-                        // still reformat even if not an allowed key as they could by typing a formatting char, but ignore if there's a selection as doesn't make sense to replace selection with illegal char and then immediately remove it
-                        if (isBelowMax && (isAllowedKey || noSelection)) {
-                            var newChar = isAllowedKey ? String.fromCharCode(e.which) : null;
-                            that._handleInputKey(newChar, true);
-                        }
-                    }
-                });
-            }
-            // handle keyup event
-            // for autoFormat: we use keyup to catch delete events after the fact
-            this.telInput.on("keyup" + this.ns, function(e) {
-                // the "enter" key event from selecting a dropdown item is triggered here on the input, because the document.keydown handler that initially handles that event triggers a focus on the input, and so the keyup for that same key event gets triggered here. weird, but just make sure we dont bother doing any re-formatting in this case (we've already done preventDefault in the keydown handler, so it wont actually submit the form or anything).
-                if (e.which == keys.ENTER) {} else if (that.options.autoFormat) {
-                    var isCtrl = e.which == keys.CTRL || e.which == keys.CMD1 || e.which == keys.CMD2, input = that.telInput[0], noSelection = that.isGoodBrowser && input.selectionStart == input.selectionEnd, cursorAtEnd = that.isGoodBrowser && input.selectionStart == that.telInput.val().length;
-                    // if delete: format with suffix
-                    // if backspace: format (if cursorAtEnd: no suffix)
-                    // if ctrl and no selection (i.e. could have just been a paste): format with suffix
-                    if (e.which == keys.DEL || e.which == keys.BSPACE || isCtrl && noSelection) {
-                        var addSuffix = !(e.which == keys.BSPACE && cursorAtEnd);
-                        that._handleInputKey(null, addSuffix);
-                    }
-                    // prevent deleting the plus (if not in nationalMode)
-                    if (!that.options.nationalMode) {
-                        var val = that.telInput.val();
-                        if (val.substr(0, 1) != "+") {
-                            // newCursorPos is current pos + 1 to account for the plus we are about to add
-                            var newCursorPos = that.isGoodBrowser ? input.selectionStart + 1 : 0;
-                            that.telInput.val("+" + val);
-                            if (that.isGoodBrowser) {
-                                input.setSelectionRange(newCursorPos, newCursorPos);
-                            }
-                        }
-                    }
-                } else {
-                    // if no autoFormat, just update flag
-                    that._updateFlagFromNumber(that.telInput.val());
-                }
-            });
             // toggle country dropdown on click
             var selectedFlag = this.selectedFlagInner.parent();
             selectedFlag.on("click" + this.ns, function(e) {
@@ -344,6 +293,68 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                 }
             }
         },
+        _initKeyListeners: function() {
+            var that = this;
+            if (this.options.autoFormat) {
+                // format number and update flag on keypress
+                // use keypress event as we want to ignore all input except for a select few keys,
+                // but we dont want to ignore the navigation keys like the arrows etc.
+                // NOTE: no point in refactoring this to only bind these listeners on focus/blur because then you would need to have those 2 listeners running the whole time anyway...
+                this.telInput.on("keypress" + this.ns, function(e) {
+                    // 32 is space, and after that it's all chars (not meta/nav keys)
+                    // this fix is needed for Firefox, which triggers keypress event for some meta/nav keys
+                    // Update: also ignore if this is a metaKey e.g. FF and Safari trigger keypress on the v of Ctrl+v
+                    if (e.which >= keys.SPACE && !e.metaKey) {
+                        e.preventDefault();
+                        // allowed keys are just numeric keys and plus
+                        // we must allow plus for the case where the user does select-all and then hits plus to start typing a new number. we could refine this logic to first check that the selection contains a plus, but that wont work in old browsers, and I think it's overkill anyway
+                        var isAllowedKey = e.which >= keys.ZERO && e.which <= keys.NINE || e.which == keys.PLUS, input = that.telInput[0], noSelection = that.isGoodBrowser && input.selectionStart == input.selectionEnd, max = that.telInput.attr("maxlength"), // assumes that if max exists, it is >0
+                        isBelowMax = max ? that.telInput.val().length < max : true;
+                        // first: ensure we dont go over maxlength. we must do this here to prevent adding digits in the middle of the number
+                        // still reformat even if not an allowed key as they could by typing a formatting char, but ignore if there's a selection as doesn't make sense to replace selection with illegal char and then immediately remove it
+                        if (isBelowMax && (isAllowedKey || noSelection)) {
+                            var newChar = isAllowedKey ? String.fromCharCode(e.which) : null;
+                            that._handleInputKey(newChar, true);
+                        }
+                        if (!isAllowedKey) {
+                            that.telInput.trigger("invalidkey");
+                        }
+                    }
+                });
+            }
+            // handle keyup event
+            // for autoFormat: we use keyup to catch delete events after the fact
+            this.telInput.on("keyup" + this.ns, function(e) {
+                // the "enter" key event from selecting a dropdown item is triggered here on the input, because the document.keydown handler that initially handles that event triggers a focus on the input, and so the keyup for that same key event gets triggered here. weird, but just make sure we dont bother doing any re-formatting in this case (we've already done preventDefault in the keydown handler, so it wont actually submit the form or anything).
+                if (e.which == keys.ENTER) {} else if (that.options.autoFormat) {
+                    var isCtrl = e.which == keys.CTRL || e.which == keys.CMD1 || e.which == keys.CMD2, input = that.telInput[0], // noSelection defaults to false for bad browsers, else would be reformatting on all ctrl keys e.g. select-all/copy
+                    noSelection = that.isGoodBrowser && input.selectionStart == input.selectionEnd, // cursorAtEnd defaults to false for bad browsers else they would never get a reformat on delete
+                    cursorAtEnd = that.isGoodBrowser && input.selectionStart == that.telInput.val().length;
+                    // if delete in the middle: reformat with no suffix (no need to reformat if delete at end)
+                    // if backspace: reformat with no suffix (need to reformat if at end to remove any lingering suffix - this is a feature)
+                    // if ctrl and no selection (i.e. could have just been a paste): reformat (if cursorAtEnd: add suffix)
+                    if (e.which == keys.DEL && !cursorAtEnd || e.which == keys.BSPACE || isCtrl && noSelection) {
+                        // important to remember never to add suffix on any delete key as can fuck up in ie8 so you can never delete a formatting char at the end
+                        that._handleInputKey(null, isCtrl && cursorAtEnd);
+                    }
+                    // prevent deleting the plus (if not in nationalMode)
+                    if (!that.options.nationalMode) {
+                        var val = that.telInput.val();
+                        if (val.substr(0, 1) != "+") {
+                            // newCursorPos is current pos + 1 to account for the plus we are about to add
+                            var newCursorPos = that.isGoodBrowser ? input.selectionStart + 1 : 0;
+                            that.telInput.val("+" + val);
+                            if (that.isGoodBrowser) {
+                                input.setSelectionRange(newCursorPos, newCursorPos);
+                            }
+                        }
+                    }
+                } else {
+                    // if no autoFormat, just update flag
+                    that._updateFlagFromNumber(that.telInput.val());
+                }
+            });
+        },
         // when autoFormat is enabled: handle various key events on the input: the 2 main situations are 1) adding a new number character, which will replace any selection, reformat, and try to preserve the cursor position. and 2) reformatting on backspace, or paste event
         _handleInputKey: function(newNumericChar, addSuffix) {
             var val = this.telInput.val(), newCursor = null, cursorAtEnd = false, // raw DOM element
@@ -354,7 +365,7 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                 // if handling a new number character: insert it in the right place and calculate the new cursor position
                 if (newNumericChar) {
                     // replace any selection they may have made with the new char
-                    val = val.substring(0, input.selectionStart) + newNumericChar + val.substring(selectionEnd, originalLen);
+                    val = val.substr(0, input.selectionStart) + newNumericChar + val.substring(selectionEnd, originalLen);
                     // if the cursor was not at the end then calculate it's new pos
                     if (!cursorAtEnd) {
                         newCursor = selectionEnd + (val.length - originalLen);
@@ -377,59 +388,64 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                 input.setSelectionRange(newCursor, newCursor);
             }
         },
-        // on focus: if empty add dial code. on blur: if just dial code, then empty it
-        _initAutoHideDialCode: function() {
+        // listen for focus and blur
+        _initFocusListeners: function() {
             var that = this;
-            // mousedown decides where the cursor goes, so if we're focusing
-            // we must preventDefault as we'll be inserting the dial code,
-            // and we want the cursor to be at the end no matter where they click
-            this.telInput.on("mousedown" + this.ns, function(e) {
-                if (!that.telInput.is(":focus") && !that.telInput.val()) {
-                    e.preventDefault();
-                    // but this also cancels the focus, so we must trigger that manually
-                    that.telInput.focus();
-                }
-            });
-            // on focus: if empty, insert the dial code for the currently selected flag
+            if (this.options.autoHideDialCode) {
+                // mousedown decides where the cursor goes, so if we're focusing we must preventDefault as we'll be inserting the dial code, and we want the cursor to be at the end no matter where they click
+                this.telInput.on("mousedown" + this.ns, function(e) {
+                    if (!that.telInput.is(":focus") && !that.telInput.val()) {
+                        e.preventDefault();
+                        // but this also cancels the focus, so we must trigger that manually
+                        that.telInput.focus();
+                    }
+                });
+            }
             this.telInput.on("focus" + this.ns, function() {
-                if (!that.telInput.val()) {
-                    that._updateVal("+" + that.selectedCountryData.dialCode, true);
-                    // after auto-inserting a dial code, if the first key they hit is '+' then assume
-                    // they are entering a new number, so remove the dial code.
-                    // use keypress instead of keydown because keydown gets triggered for the shift key
-                    // (required to hit the + key), and instead of keyup because that shows the new '+'
-                    // before removing the old one
-                    that.telInput.one("keypress.plus" + that.ns, function(e) {
-                        if (e.which == keys.PLUS) {
-                            // if autoFormat is enabled, this key event will have already have been handled by another keypress listener (hence we need to add the "+"). if disabled, it will be handled after this by a keyup listener (hence no need to add the "+").
-                            var newVal = that.options.autoFormat ? "+" : "";
-                            that.telInput.val(newVal);
-                        }
-                    });
-                    // after tabbing in, make sure the cursor is at the end
-                    // we must use setTimeout to get outside of the focus handler as it seems the
-                    // selection happens after that
-                    setTimeout(function() {
-                        var input = that.telInput[0];
-                        if (that.isGoodBrowser) {
-                            var len = that.telInput.val().length;
-                            input.setSelectionRange(len, len);
-                        }
-                    });
-                }
-            });
-            // on blur: if just a dial code then remove it
-            this.telInput.on("blur" + this.ns, function() {
-                var value = that.telInput.val(), startsPlus = value.substr(0, 1) == "+";
-                if (startsPlus) {
-                    var numeric = that._getNumeric(value);
-                    // if just a plus, or if just a dial code
-                    if (!numeric || that.selectedCountryData.dialCode == numeric) {
-                        that.telInput.val("");
+                var value = that.telInput.val();
+                // save this to compare on blur
+                that.telInput.data("focusVal", value);
+                if (that.options.autoHideDialCode) {
+                    // on focus: if empty, insert the dial code for the currently selected flag
+                    if (!value) {
+                        that._updateVal("+" + that.selectedCountryData.dialCode, true);
+                        // after auto-inserting a dial code, if the first key they hit is '+' then assume they are entering a new number, so remove the dial code. use keypress instead of keydown because keydown gets triggered for the shift key (required to hit the + key), and instead of keyup because that shows the new '+' before removing the old one
+                        that.telInput.one("keypress.plus" + that.ns, function(e) {
+                            if (e.which == keys.PLUS) {
+                                // if autoFormat is enabled, this key event will have already have been handled by another keypress listener (hence we need to add the "+"). if disabled, it will be handled after this by a keyup listener (hence no need to add the "+").
+                                var newVal = that.options.autoFormat ? "+" : "";
+                                that.telInput.val(newVal);
+                            }
+                        });
+                        // after tabbing in, make sure the cursor is at the end we must use setTimeout to get outside of the focus handler as it seems the selection happens after that
+                        setTimeout(function() {
+                            var input = that.telInput[0];
+                            if (that.isGoodBrowser) {
+                                var len = that.telInput.val().length;
+                                input.setSelectionRange(len, len);
+                            }
+                        });
                     }
                 }
-                // remove the keypress listener we added on focus
-                that.telInput.off("keypress.plus" + that.ns);
+            });
+            this.telInput.on("blur" + this.ns, function() {
+                if (that.options.autoHideDialCode) {
+                    // on blur: if just a dial code then remove it
+                    var value = that.telInput.val(), startsPlus = value.substr(0, 1) == "+";
+                    if (startsPlus) {
+                        var numeric = that._getNumeric(value);
+                        // if just a plus, or if just a dial code
+                        if (!numeric || that.selectedCountryData.dialCode == numeric) {
+                            that.telInput.val("");
+                        }
+                    }
+                    // remove the keypress listener we added on focus
+                    that.telInput.off("keypress.plus" + that.ns);
+                }
+                // manually trigger change event if value has changed
+                if (that.options.autoFormat && that.telInput.val() != that.telInput.data("focusVal")) {
+                    that.telInput.trigger("change");
+                }
             });
         },
         // extract the numeric digits from the given string
@@ -568,6 +584,11 @@ https://github.com/Bluefieldscom/intl-tel-input.git
         },
         // check if need to select a new flag based on the given number
         _updateFlagFromNumber: function(number) {
+            // if we're in nationalMode and we're on US/Canada, make sure the number starts with a +1 so _getDialCode will be able to extract the area code
+            // update: if we dont yet have selectedCountryData, but we're here (trying to update the flag from the number), that means we're initialising the plugin with a number that already has a dial code, so fine to ignore this bit
+            if (this.options.nationalMode && this.selectedCountryData && this.selectedCountryData.dialCode == "1" && number.substr(0, 1) != "+") {
+                number = "+1" + number;
+            }
             // try and extract valid dial code from input
             var dialCode = this._getDialCode(number);
             if (dialCode) {
@@ -595,12 +616,6 @@ https://github.com/Bluefieldscom/intl-tel-input.git
         // check if the given number contains an unknown area code from the North American Numbering Plan i.e. the only dialCode that could be extracted was +1 but the actual number's length is >=4
         _isUnknownNanp: function(number, dialCode) {
             return dialCode == "+1" && this._getNumeric(number).length >= 4;
-        },
-        // reset the input value to just a dial code
-        _resetToDialCode: function(dialCode) {
-            if (!this.options.nationalMode && !this.options.autoHideDialCode) {
-                this.telInput.val("+" + dialCode);
-            }
         },
         // remove highlighting from other list items and highlight the given item
         _highlightListItem: function(listItem) {
@@ -640,7 +655,7 @@ https://github.com/Bluefieldscom/intl-tel-input.git
         // update the input placeholder to an example number from the currently selected country
         _updatePlaceholder: function() {
             if (window.intlTelInputUtils && !this.hadInitialPlaceholder) {
-                var iso2 = this.selectedCountryData.iso2, placeholder = intlTelInputUtils.getExampleNumber(iso2, this.options.nationalMode);
+                var iso2 = this.selectedCountryData.iso2, numberType = this.options.numberType ? intlTelInputUtils.numberType[this.options.numberType] : intlTelInputUtils.numberType.FIXED_LINE, placeholder = intlTelInputUtils.getExampleNumber(iso2, this.options.nationalMode, numberType);
                 this.telInput.attr("placeholder", placeholder);
             }
         },
@@ -650,12 +665,8 @@ https://github.com/Bluefieldscom/intl-tel-input.git
             var countryCode = listItem.attr("data-country-code");
             this._selectFlag(countryCode);
             this._closeDropdown();
-            // update input value
-            if (!this.options.nationalMode) {
-                this._updateDialCode("+" + listItem.attr("data-dial-code"));
-            }
-            // always fire the change event as even if nationalMode=true (and we haven't updated
-            // the input val), the system as a whole has still changed - see country-sync example
+            this._updateDialCode(listItem.attr("data-dial-code"), true);
+            // always fire the change event as even if nationalMode=true (and we haven't updated the input val), the system as a whole has still changed - see country-sync example. think of it as making a selection from a select element.
             this.telInput.trigger("change");
             // focus the input
             this.telInput.focus();
@@ -690,20 +701,30 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                 container.scrollTop(newScrollTop - heightDifference);
             }
         },
-        // replace any existing dial code with the new one
-        // currently this is only called from _selectListItem
-        _updateDialCode: function(newDialCode) {
-            var inputVal = this.telInput.val(), prevDialCode = this._getDialCode(inputVal), newNumber;
-            // if the previous number contained a valid dial code, replace it
-            // (if more than just a plus character)
-            if (prevDialCode.length > 1) {
-                newNumber = inputVal.replace(prevDialCode, newDialCode);
+        // replace any existing dial code with the new one (if not in nationalMode)
+        // also we need to know if we're focusing for a couple of reasons e.g. if so, we want to add any formatting suffix, also if the input is empty and we're not in nationalMode, then we want to insert the dial code
+        _updateDialCode: function(newDialCode, focusing) {
+            var inputVal = this.telInput.val(), newNumber;
+            // save having to pass this every time
+            newDialCode = "+" + newDialCode;
+            if (this.options.nationalMode && inputVal.substr(0, 1) != "+") {
+                // if nationalMode, we just want to re-format
+                newNumber = inputVal;
+            } else if (inputVal) {
+                // if the previous number contained a valid dial code, replace it
+                // (if more than just a plus character)
+                var prevDialCode = this._getDialCode(inputVal);
+                if (prevDialCode.length > 1) {
+                    newNumber = inputVal.replace(prevDialCode, newDialCode);
+                } else {
+                    // if the previous number didn't contain a dial code, we should persist it
+                    var existingNumber = inputVal.substr(0, 1) != "+" ? $.trim(inputVal) : "";
+                    newNumber = newDialCode + existingNumber;
+                }
             } else {
-                // if the previous number didn't contain a dial code, we should persist it
-                var existingNumber = inputVal && inputVal.substr(0, 1) != "+" ? $.trim(inputVal) : "";
-                newNumber = newDialCode + existingNumber;
+                newNumber = !this.options.autoHideDialCode || focusing ? newDialCode : "";
             }
-            this._updateVal(newNumber, true);
+            this._updateVal(newNumber, focusing);
         },
         // try and extract a valid international dial code from a full telephone number
         // Note: returns the raw string inc plus character and any whitespace/dots etc
@@ -721,7 +742,7 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                         // if current numericChars make a valid dial code
                         if (this.countryCodes[numericChars]) {
                             // store the actual raw string (useful for matching later)
-                            dialCode = number.substring(0, i + 1);
+                            dialCode = number.substr(0, i + 1);
                         }
                         // longest dial code is 4 chars
                         if (numericChars.length == 4) {
@@ -779,7 +800,10 @@ https://github.com/Bluefieldscom/intl-tel-input.git
         isValidNumber: function() {
             var val = $.trim(this.telInput.val()), countryCode = this.options.nationalMode ? this.selectedCountryData.iso2 : "", // libphonenumber allows alpha chars, but in order to allow that, we'd need a method to retrieve the processed number, with letters replaced with numbers
             containsAlpha = /[a-zA-Z]/.test(val);
-            return Boolean(!containsAlpha && window.intlTelInputUtils && intlTelInputUtils.isValidNumber(val, countryCode));
+            if (!containsAlpha && window.intlTelInputUtils) {
+                return intlTelInputUtils.isValidNumber(val, countryCode);
+            }
+            return false;
         },
         // load the utils script
         loadUtils: function(path) {
@@ -804,19 +828,7 @@ https://github.com/Bluefieldscom/intl-tel-input.git
             // check if already selected
             if (!this.selectedFlagInner.hasClass(countryCode)) {
                 this._selectFlag(countryCode);
-                var val = this.telInput.val();
-                if (val) {
-                    if (this.options.nationalMode) {
-                        // reformat
-                        this._updateVal(val);
-                    } else if (val) {
-                        // update DC and reformat
-                        this._updateDialCode("+" + this.selectedCountryData.dialCode);
-                    }
-                } else {
-                    // insert DC (this will check !nationalMode and !autoHideDialCode)
-                    this._resetToDialCode(this.selectedCountryData.dialCode);
-                }
+                this._updateDialCode(this.selectedCountryData.dialCode, false);
             }
         },
         // set the input value and update the flag
