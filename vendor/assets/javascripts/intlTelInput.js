@@ -1,5 +1,5 @@
 /*
-International Telephone Input v3.6.0
+International Telephone Input v4.0.0
 https://github.com/Bluefieldscom/intl-tel-input.git
 */
 // wrap in UMD - see https://github.com/umdjs/umd/blob/master/jqueryPlugin.js
@@ -21,16 +21,18 @@ https://github.com/Bluefieldscom/intl-tel-input.git
         autoHideDialCode: true,
         // default country
         defaultCountry: "",
+        // token for ipinfo - required for https or over 1000 daily page views support
+        ipinfoToken: "",
         // don't insert international dial codes
-        nationalMode: false,
+        nationalMode: true,
         // number type to use for placeholders
-        numberType: "",
+        numberType: "MOBILE",
         // display only these countries
         onlyCountries: [],
         // the countries at the top of the list. defaults to united states and united kingdom
         preferredCountries: [ "us", "gb" ],
-        // make the dropdown the same width as the input
-        responsiveDropdown: false,
+        // stop the user from typing invalid numbers
+        preventInvalidNumbers: false,
         // specify the path to the libphonenumber script to enable validation/formatting
         utilsScript: ""
     }, keys = {
@@ -72,28 +74,33 @@ https://github.com/Bluefieldscom/intl-tel-input.git
             var that = this;
             // if defaultCountry is set to "auto", we must do a lookup first
             if (this.options.defaultCountry == "auto") {
-                $.get("http://ipinfo.io", function(response) {
-                    that.options.defaultCountry = response && response.country ? response.country.toLowerCase() : "";
-                    that.ready();
-                }, "jsonp");
+                // reset this in case lookup fails
+                this.options.defaultCountry = "";
+                var ipinfoURL = "//ipinfo.io";
+                if (this.options.ipinfoToken) {
+                    ipinfoURL += "?token=" + this.options.ipinfoToken;
+                }
+                $.get(ipinfoURL, function(response) {
+                    if (response && response.country) {
+                        that.options.defaultCountry = response.country.toLowerCase();
+                    }
+                }, "jsonp").always(function() {
+                    that._ready();
+                });
             } else {
-                this.ready();
+                this._ready();
             }
         },
-        ready: function() {
+        _ready: function() {
             // if in nationalMode, disable options relating to dial codes
             if (this.options.nationalMode) {
                 this.options.autoHideDialCode = false;
             }
-            // IE Mobile and Chrome for Android have issues with key events (see issues 56 and 68) which make autoFormat impossible
-            if (navigator.userAgent.match(/IEMobile/i) || navigator.userAgent.match(/Android/i) && navigator.userAgent.match(/Chrome/i)) {
+            // IE Mobile doesn't support the keypress event (see issue 68) which makes autoFormat impossible
+            if (navigator.userAgent.match(/IEMobile/i)) {
                 this.options.autoFormat = false;
             }
-            // auto enable responsiveDropdown mode on small screens (dropdown is currently set to 430px in CSS)
-            if (window.innerWidth < 500) {
-                this.options.responsiveDropdown = true;
-            }
-            // process all the data: onlyCounties, preferredCountries, defaultCountry etc
+            // process all the data: onlyCountries, preferredCountries etc
             this._processCountryData();
             // generate the markup
             this._generateMarkup();
@@ -105,8 +112,7 @@ https://github.com/Bluefieldscom/intl-tel-input.git
         /********************
    *  PRIVATE METHODS
    ********************/
-        // prepare all of the country data, including onlyCountries, preferredCountries and
-        // defaultCountry options
+        // prepare all of the country data, including onlyCountries and preferredCountries options
         _processCountryData: function() {
             // set the instances country data objects
             this._setInstanceCountryData();
@@ -127,10 +133,9 @@ https://github.com/Bluefieldscom/intl-tel-input.git
             // process onlyCountries option
             if (this.options.onlyCountries.length) {
                 this.countries = [];
-                for (i = 0; i < this.options.onlyCountries.length; i++) {
-                    var countryData = this._getCountryData(this.options.onlyCountries[i], true, false);
-                    if (countryData) {
-                        this.countries.push(countryData);
+                for (i = 0; i < allCountries.length; i++) {
+                    if ($.inArray(allCountries[i].iso2, this.options.onlyCountries) != -1) {
+                        this.countries.push(allCountries[i]);
                     }
                 }
             } else {
@@ -165,6 +170,8 @@ https://github.com/Bluefieldscom/intl-tel-input.git
         _generateMarkup: function() {
             // telephone input
             this.telInput = $(this.element);
+            // prevent autocomplete as there's no safe, cross-browser event we can react to, so it can easily put the plugin in an inconsistent state e.g. the wrong flag selected for the autocompleted number, which on submit could mean the wrong number is saved (esp in nationalMode)
+            this.telInput.attr("autocomplete", "off");
             // containers (mostly for positioning)
             this.telInput.wrap($("<div>", {
                 "class": "intl-tel-input"
@@ -177,7 +184,7 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                 "class": "selected-flag"
             }).appendTo(flagsContainer);
             this.selectedFlagInner = $("<div>", {
-                "class": "flag"
+                "class": "iti-flag"
             }).appendTo(selectedFlag);
             // CSS triangle
             $("<div>", {
@@ -197,8 +204,8 @@ https://github.com/Bluefieldscom/intl-tel-input.git
             // now we can grab the dropdown height, and hide it properly
             this.dropdownHeight = this.countryList.outerHeight();
             this.countryList.removeClass("v-hide").addClass("hide");
-            // and set the width
-            if (this.options.responsiveDropdown) {
+            // on small screens make the dropdown the same width as the input
+            if (window.innerWidth < 500) {
                 this.countryList.outerWidth(this.telInput.outerWidth());
             }
             // this is useful in lots of places
@@ -215,7 +222,7 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                 // open the list item
                 tmp += "<li class='country " + className + "' data-dial-code='" + c.dialCode + "' data-country-code='" + c.iso2 + "'>";
                 // add the flag
-                tmp += "<div class='flag " + c.iso2 + "'></div>";
+                tmp += "<div class='iti-flag " + c.iso2 + "'></div>";
                 // and the country name and dial code
                 tmp += "<span class='country-name'>" + c.name + "</span>";
                 tmp += "<span class='dial-code'>+" + c.dialCode + "</span>";
@@ -276,7 +283,7 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                 // only intercept this event if we're opening the dropdown
                 // else let it bubble up to the top ("click-off-to-close" listener)
                 // we cannot just stopPropagation as it may be needed to close another instance
-                if (that.countryList.hasClass("hide") && !that.telInput.prop("disabled")) {
+                if (that.countryList.hasClass("hide") && !that.telInput.prop("disabled") && !that.telInput.prop("readonly")) {
                     that._showDropdown();
                 }
             });
@@ -304,17 +311,22 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                     // 32 is space, and after that it's all chars (not meta/nav keys)
                     // this fix is needed for Firefox, which triggers keypress event for some meta/nav keys
                     // Update: also ignore if this is a metaKey e.g. FF and Safari trigger keypress on the v of Ctrl+v
-                    if (e.which >= keys.SPACE && !e.metaKey) {
+                    // Update: also check that we have utils before we do any autoFormat stuff
+                    if (e.which >= keys.SPACE && !e.metaKey && window.intlTelInputUtils && !that.telInput.prop("readonly")) {
                         e.preventDefault();
                         // allowed keys are just numeric keys and plus
                         // we must allow plus for the case where the user does select-all and then hits plus to start typing a new number. we could refine this logic to first check that the selection contains a plus, but that wont work in old browsers, and I think it's overkill anyway
-                        var isAllowedKey = e.which >= keys.ZERO && e.which <= keys.NINE || e.which == keys.PLUS, input = that.telInput[0], noSelection = that.isGoodBrowser && input.selectionStart == input.selectionEnd, max = that.telInput.attr("maxlength"), // assumes that if max exists, it is >0
-                        isBelowMax = max ? that.telInput.val().length < max : true;
+                        var isAllowedKey = e.which >= keys.ZERO && e.which <= keys.NINE || e.which == keys.PLUS, input = that.telInput[0], noSelection = that.isGoodBrowser && input.selectionStart == input.selectionEnd, max = that.telInput.attr("maxlength"), val = that.telInput.val(), // assumes that if max exists, it is >0
+                        isBelowMax = max ? val.length < max : true;
                         // first: ensure we dont go over maxlength. we must do this here to prevent adding digits in the middle of the number
                         // still reformat even if not an allowed key as they could by typing a formatting char, but ignore if there's a selection as doesn't make sense to replace selection with illegal char and then immediately remove it
                         if (isBelowMax && (isAllowedKey || noSelection)) {
                             var newChar = isAllowedKey ? String.fromCharCode(e.which) : null;
                             that._handleInputKey(newChar, true);
+                            // if something has changed, trigger the input event (which was otherwised squashed by the preventDefault)
+                            if (val != that.telInput.val()) {
+                                that.telInput.trigger("input");
+                            }
                         }
                         if (!isAllowedKey) {
                             that.telInput.trigger("invalidkey");
@@ -323,10 +335,11 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                 });
             }
             // handle keyup event
-            // for autoFormat: we use keyup to catch delete events after the fact
+            // for autoFormat: we use keyup to catch cut/paste events and also delete events (after the fact)
             this.telInput.on("keyup" + this.ns, function(e) {
                 // the "enter" key event from selecting a dropdown item is triggered here on the input, because the document.keydown handler that initially handles that event triggers a focus on the input, and so the keyup for that same key event gets triggered here. weird, but just make sure we dont bother doing any re-formatting in this case (we've already done preventDefault in the keydown handler, so it wont actually submit the form or anything).
-                if (e.which == keys.ENTER) {} else if (that.options.autoFormat) {
+                // ALSO: ignore keyup if readonly
+                if (e.which == keys.ENTER || that.telInput.prop("readonly")) {} else if (that.options.autoFormat && window.intlTelInputUtils) {
                     var isCtrl = e.which == keys.CTRL || e.which == keys.CMD1 || e.which == keys.CMD2, input = that.telInput[0], // noSelection defaults to false for bad browsers, else would be reformatting on all ctrl keys e.g. select-all/copy
                     noSelection = that.isGoodBrowser && input.selectionStart == input.selectionEnd, // cursorAtEnd defaults to false for bad browsers else they would never get a reformat on delete
                     cursorAtEnd = that.isGoodBrowser && input.selectionStart == that.telInput.val().length;
@@ -355,38 +368,85 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                 }
             });
         },
-        // when autoFormat is enabled: handle various key events on the input: the 2 main situations are 1) adding a new number character, which will replace any selection, reformat, and try to preserve the cursor position. and 2) reformatting on backspace, or paste event
+        // when autoFormat is enabled: handle various key events on the input: the 2 main situations are 1) adding a new number character, which will replace any selection, reformat, and preserve the cursor position. and 2) reformatting on backspace, or paste event (etc)
         _handleInputKey: function(newNumericChar, addSuffix) {
-            var val = this.telInput.val(), newCursor = null, cursorAtEnd = false, // raw DOM element
-            input = this.telInput[0];
+            var val = this.telInput.val(), numericBefore = this._getNumeric(val), originalLeftChar, // raw DOM element
+            input = this.telInput[0], digitsOnRight = 0;
             if (this.isGoodBrowser) {
-                var selectionEnd = input.selectionEnd, originalLen = val.length;
-                cursorAtEnd = selectionEnd == originalLen;
-                // if handling a new number character: insert it in the right place and calculate the new cursor position
+                // cursor strategy: maintain the number of digits on the right. we use the right instead of the left so that A) we dont have to account for the new digit (or digits if paste event), and B) we're always on the right side of formatting suffixes
+                digitsOnRight = this._getDigitsOnRight(val, input.selectionEnd);
+                // if handling a new number character: insert it in the right place
                 if (newNumericChar) {
                     // replace any selection they may have made with the new char
-                    val = val.substr(0, input.selectionStart) + newNumericChar + val.substring(selectionEnd, originalLen);
-                    // if the cursor was not at the end then calculate it's new pos
-                    if (!cursorAtEnd) {
-                        newCursor = selectionEnd + (val.length - originalLen);
-                    }
+                    val = val.substr(0, input.selectionStart) + newNumericChar + val.substring(input.selectionEnd, val.length);
                 } else {
-                    // here we're not handling a new char, we're just doing a re-format, but we still need to maintain the cursor position
-                    newCursor = input.selectionStart;
+                    // here we're not handling a new char, we're just doing a re-format (e.g. on delete/backspace/paste, after the fact), but we still need to maintain the cursor position. so make note of the char on the left, and then after the re-format, we'll count in the same number of digits from the right, and then keep going through any formatting chars until we hit the same left char that we had before.
+                    originalLeftChar = val.charAt(input.selectionStart - 1);
                 }
             } else if (newNumericChar) {
                 val += newNumericChar;
             }
             // update the number and flag
             this.setNumber(val, addSuffix);
+            val = this.telInput.val();
+            var numericAfter = this._getNumeric(val), numericIsSame = numericBefore == numericAfter;
+            if (this.options.preventInvalidNumbers && newNumericChar) {
+                if (numericIsSame) {
+                    // if we're trying to add a new numeric char and the numeric digits haven't changed, then trigger invalid
+                    this.telInput.trigger("invalidkey");
+                } else if (numericBefore.length == numericAfter.length) {
+                    // preventInvalidNumbers edge case: adding digit in middle of full number, so a digit gets dropped from the end (numeric digits have changed but are same length)
+                    digitsOnRight--;
+                }
+            }
             // update the cursor position
             if (this.isGoodBrowser) {
+                var newCursor;
                 // if it was at the end, keep it there
-                if (cursorAtEnd) {
-                    newCursor = this.telInput.val().length;
+                if (!digitsOnRight) {
+                    newCursor = val.length;
+                } else {
+                    // else count in the same number of digits from the right
+                    newCursor = this._getCursorFromDigitsOnRight(val, digitsOnRight);
+                    // but if delete/paste etc, keep going left until hit the same left char as before
+                    if (!newNumericChar) {
+                        newCursor = this._getCursorFromLeftChar(val, newCursor, originalLeftChar);
+                    }
                 }
+                // set the new cursor
                 input.setSelectionRange(newCursor, newCursor);
             }
+        },
+        // we start from the position in guessCursor, and work our way left until we hit the originalLeftChar or a number to make sure that after reformatting the cursor has the same char on the left in the case of a delete etc
+        _getCursorFromLeftChar: function(val, guessCursor, originalLeftChar) {
+            for (var i = guessCursor; i > 0; i--) {
+                var leftChar = val.charAt(i - 1);
+                if (leftChar == originalLeftChar || $.isNumeric(leftChar)) {
+                    return i;
+                }
+            }
+            return 0;
+        },
+        // after a reformat we need to make sure there are still the same number of digits to the right of the cursor
+        _getCursorFromDigitsOnRight: function(val, digitsOnRight) {
+            for (var i = val.length - 1; i >= 0; i--) {
+                if ($.isNumeric(val.charAt(i))) {
+                    if (--digitsOnRight === 0) {
+                        return i;
+                    }
+                }
+            }
+            return 0;
+        },
+        // get the number of numeric digits to the right of the cursor so we can reposition the cursor correctly after the reformat has happened
+        _getDigitsOnRight: function(val, selectionEnd) {
+            var digitsOnRight = 0;
+            for (var i = selectionEnd; i < val.length; i++) {
+                if ($.isNumeric(val.charAt(i))) {
+                    digitsOnRight++;
+                }
+            }
+            return digitsOnRight;
         },
         // listen for focus and blur
         _initFocusListeners: function() {
@@ -401,31 +461,29 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                     }
                 });
             }
-            this.telInput.on("focus" + this.ns, function() {
+            this.telInput.on("focus" + this.ns, function(e) {
                 var value = that.telInput.val();
                 // save this to compare on blur
                 that.telInput.data("focusVal", value);
-                if (that.options.autoHideDialCode) {
-                    // on focus: if empty, insert the dial code for the currently selected flag
-                    if (!value) {
-                        that._updateVal("+" + that.selectedCountryData.dialCode, true);
-                        // after auto-inserting a dial code, if the first key they hit is '+' then assume they are entering a new number, so remove the dial code. use keypress instead of keydown because keydown gets triggered for the shift key (required to hit the + key), and instead of keyup because that shows the new '+' before removing the old one
-                        that.telInput.one("keypress.plus" + that.ns, function(e) {
-                            if (e.which == keys.PLUS) {
-                                // if autoFormat is enabled, this key event will have already have been handled by another keypress listener (hence we need to add the "+"). if disabled, it will be handled after this by a keyup listener (hence no need to add the "+").
-                                var newVal = that.options.autoFormat ? "+" : "";
-                                that.telInput.val(newVal);
-                            }
-                        });
-                        // after tabbing in, make sure the cursor is at the end we must use setTimeout to get outside of the focus handler as it seems the selection happens after that
-                        setTimeout(function() {
-                            var input = that.telInput[0];
-                            if (that.isGoodBrowser) {
-                                var len = that.telInput.val().length;
-                                input.setSelectionRange(len, len);
-                            }
-                        });
-                    }
+                // on focus: if empty, insert the dial code for the currently selected flag
+                if (that.options.autoHideDialCode && !value && !that.telInput.prop("readonly")) {
+                    that._updateVal("+" + that.selectedCountryData.dialCode, true);
+                    // after auto-inserting a dial code, if the first key they hit is '+' then assume they are entering a new number, so remove the dial code. use keypress instead of keydown because keydown gets triggered for the shift key (required to hit the + key), and instead of keyup because that shows the new '+' before removing the old one
+                    that.telInput.one("keypress.plus" + that.ns, function(e) {
+                        if (e.which == keys.PLUS) {
+                            // if autoFormat is enabled, this key event will have already have been handled by another keypress listener (hence we need to add the "+"). if disabled, it will be handled after this by a keyup listener (hence no need to add the "+").
+                            var newVal = that.options.autoFormat && window.intlTelInputUtils ? "+" : "";
+                            that.telInput.val(newVal);
+                        }
+                    });
+                    // after tabbing in, make sure the cursor is at the end we must use setTimeout to get outside of the focus handler as it seems the selection happens after that
+                    setTimeout(function() {
+                        var input = that.telInput[0];
+                        if (that.isGoodBrowser) {
+                            var len = that.telInput.val().length;
+                            input.setSelectionRange(len, len);
+                        }
+                    });
                 }
             });
             this.telInput.on("blur" + this.ns, function() {
@@ -442,8 +500,8 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                     // remove the keypress listener we added on focus
                     that.telInput.off("keypress.plus" + that.ns);
                 }
-                // manually trigger change event if value has changed
-                if (that.options.autoFormat && that.telInput.val() != that.telInput.data("focusVal")) {
+                // if autoFormat, we must manually trigger change event if value has changed
+                if (that.options.autoFormat && window.intlTelInputUtils && that.telInput.val() != that.telInput.data("focusVal")) {
                     that.telInput.trigger("change");
                 }
             });
@@ -570,7 +628,7 @@ https://github.com/Bluefieldscom/intl-tel-input.git
         _updateVal: function(val, addSuffix) {
             var formatted;
             if (this.options.autoFormat && window.intlTelInputUtils) {
-                formatted = intlTelInputUtils.formatNumber(val, this.selectedCountryData.iso2, addSuffix);
+                formatted = intlTelInputUtils.formatNumber(val, this.selectedCountryData.iso2, addSuffix, this.options.preventInvalidNumbers);
                 // ensure we dont go over maxlength. we must do this here to truncate any formatting suffix, and also handle paste events
                 var max = this.telInput.attr("maxlength");
                 if (max && formatted.length > max) {
@@ -641,21 +699,21 @@ https://github.com/Bluefieldscom/intl-tel-input.git
         _selectFlag: function(countryCode) {
             // do this first as it will throw an error and stop if countryCode is invalid
             this.selectedCountryData = this._getCountryData(countryCode, false, false);
-            this.selectedFlagInner.attr("class", "flag " + countryCode);
+            this.selectedFlagInner.attr("class", "iti-flag " + countryCode);
             // update the selected country's title attribute
             var title = this.selectedCountryData.name + ": +" + this.selectedCountryData.dialCode;
             this.selectedFlagInner.parent().attr("title", title);
             // and the input's placeholder
             this._updatePlaceholder();
             // update the active list item
-            var listItem = this.countryListItems.children(".flag." + countryCode).first().parent();
+            var listItem = this.countryListItems.children(".iti-flag." + countryCode).first().parent();
             this.countryListItems.removeClass("active");
             listItem.addClass("active");
         },
         // update the input placeholder to an example number from the currently selected country
         _updatePlaceholder: function() {
             if (window.intlTelInputUtils && !this.hadInitialPlaceholder) {
-                var iso2 = this.selectedCountryData.iso2, numberType = this.options.numberType ? intlTelInputUtils.numberType[this.options.numberType] : intlTelInputUtils.numberType.FIXED_LINE, placeholder = intlTelInputUtils.getExampleNumber(iso2, this.options.nationalMode, numberType);
+                var iso2 = this.selectedCountryData.iso2, numberType = intlTelInputUtils.numberType[this.options.numberType || "FIXED_LINE"], placeholder = intlTelInputUtils.getExampleNumber(iso2, this.options.nationalMode, numberType);
                 this.telInput.attr("placeholder", placeholder);
             }
         },
@@ -770,10 +828,10 @@ https://github.com/Bluefieldscom/intl-tel-input.git
             var container = this.telInput.parent();
             container.before(this.telInput).remove();
         },
-        // format the number to E164
-        getCleanNumber: function() {
+        // format the number to the given type
+        getNumber: function(type) {
             if (window.intlTelInputUtils) {
-                return intlTelInputUtils.formatNumberE164(this.telInput.val(), this.selectedCountryData.iso2);
+                return intlTelInputUtils.formatNumberByType(this.telInput.val(), this.selectedCountryData.iso2, type);
             }
             return "";
         },
@@ -894,10 +952,6 @@ https://github.com/Bluefieldscom/intl-tel-input.git
     $.fn[pluginName].getCountryData = function() {
         return allCountries;
     };
-    // set the country data object
-    $.fn[pluginName].setCountryData = function(obj) {
-        allCountries = obj;
-    };
     // Tell JSHint to ignore this warning: "character may get silently deleted by one or more browsers"
     // jshint -W100
     // Array of country objects for the flag dropdown.
@@ -938,7 +992,7 @@ JSON.stringify(result);
     //    Order (if >1 country with same dial code),
     //    Area codes (if >1 country with same dial code)
     // ]
-    var allCountries = [ [ "Afghanistan (‫افغانستان‬‎)", "af", "93" ], [ "Albania (Shqipëri)", "al", "355" ], [ "Algeria (‫الجزائر‬‎)", "dz", "213" ], [ "American Samoa", "as", "1684" ], [ "Andorra", "ad", "376" ], [ "Angola", "ao", "244" ], [ "Anguilla", "ai", "1264" ], [ "Antigua and Barbuda", "ag", "1268" ], [ "Argentina", "ar", "54" ], [ "Armenia (Հայաստան)", "am", "374" ], [ "Aruba", "aw", "297" ], [ "Australia", "au", "61" ], [ "Austria (Österreich)", "at", "43" ], [ "Azerbaijan (Azərbaycan)", "az", "994" ], [ "Bahamas", "bs", "1242" ], [ "Bahrain (‫البحرين‬‎)", "bh", "973" ], [ "Bangladesh (বাংলাদেশ)", "bd", "880" ], [ "Barbados", "bb", "1246" ], [ "Belarus (Беларусь)", "by", "375" ], [ "Belgium (België)", "be", "32" ], [ "Belize", "bz", "501" ], [ "Benin (Bénin)", "bj", "229" ], [ "Bermuda", "bm", "1441" ], [ "Bhutan (འབྲུག)", "bt", "975" ], [ "Bolivia", "bo", "591" ], [ "Bosnia and Herzegovina (Босна и Херцеговина)", "ba", "387" ], [ "Botswana", "bw", "267" ], [ "Brazil (Brasil)", "br", "55" ], [ "British Indian Ocean Territory", "io", "246" ], [ "British Virgin Islands", "vg", "1284" ], [ "Brunei", "bn", "673" ], [ "Bulgaria (България)", "bg", "359" ], [ "Burkina Faso", "bf", "226" ], [ "Burundi (Uburundi)", "bi", "257" ], [ "Cambodia (កម្ពុជា)", "kh", "855" ], [ "Cameroon (Cameroun)", "cm", "237" ], [ "Canada", "ca", "1", 1, [ "204", "236", "249", "250", "289", "306", "343", "365", "387", "403", "416", "418", "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "604", "613", "639", "647", "672", "705", "709", "742", "778", "780", "782", "807", "819", "825", "867", "873", "902", "905" ] ], [ "Cape Verde (Kabu Verdi)", "cv", "238" ], [ "Caribbean Netherlands", "bq", "599", 1 ], [ "Cayman Islands", "ky", "1345" ], [ "Central African Republic (République centrafricaine)", "cf", "236" ], [ "Chad (Tchad)", "td", "235" ], [ "Chile", "cl", "56" ], [ "China (中国)", "cn", "86" ], [ "Colombia", "co", "57" ], [ "Comoros (‫جزر القمر‬‎)", "km", "269" ], [ "Congo (DRC) (Jamhuri ya Kidemokrasia ya Kongo)", "cd", "243" ], [ "Congo (Republic) (Congo-Brazzaville)", "cg", "242" ], [ "Cook Islands", "ck", "682" ], [ "Costa Rica", "cr", "506" ], [ "Côte d’Ivoire", "ci", "225" ], [ "Croatia (Hrvatska)", "hr", "385" ], [ "Cuba", "cu", "53" ], [ "Curaçao", "cw", "599", 0 ], [ "Cyprus (Κύπρος)", "cy", "357" ], [ "Czech Republic (Česká republika)", "cz", "420" ], [ "Denmark (Danmark)", "dk", "45" ], [ "Djibouti", "dj", "253" ], [ "Dominica", "dm", "1767" ], [ "Dominican Republic (República Dominicana)", "do", "1", 2, [ "809", "829", "849" ] ], [ "Ecuador", "ec", "593" ], [ "Egypt (‫مصر‬‎)", "eg", "20" ], [ "El Salvador", "sv", "503" ], [ "Equatorial Guinea (Guinea Ecuatorial)", "gq", "240" ], [ "Eritrea", "er", "291" ], [ "Estonia (Eesti)", "ee", "372" ], [ "Ethiopia", "et", "251" ], [ "Falkland Islands (Islas Malvinas)", "fk", "500" ], [ "Faroe Islands (Føroyar)", "fo", "298" ], [ "Fiji", "fj", "679" ], [ "Finland (Suomi)", "fi", "358" ], [ "France", "fr", "33" ], [ "French Guiana (Guyane française)", "gf", "594" ], [ "French Polynesia (Polynésie française)", "pf", "689" ], [ "Gabon", "ga", "241" ], [ "Gambia", "gm", "220" ], [ "Georgia (საქართველო)", "ge", "995" ], [ "Germany (Deutschland)", "de", "49" ], [ "Ghana (Gaana)", "gh", "233" ], [ "Gibraltar", "gi", "350" ], [ "Greece (Ελλάδα)", "gr", "30" ], [ "Greenland (Kalaallit Nunaat)", "gl", "299" ], [ "Grenada", "gd", "1473" ], [ "Guadeloupe", "gp", "590", 0 ], [ "Guam", "gu", "1671" ], [ "Guatemala", "gt", "502" ], [ "Guinea (Guinée)", "gn", "224" ], [ "Guinea-Bissau (Guiné Bissau)", "gw", "245" ], [ "Guyana", "gy", "592" ], [ "Haiti", "ht", "509" ], [ "Honduras", "hn", "504" ], [ "Hong Kong (香港)", "hk", "852" ], [ "Hungary (Magyarország)", "hu", "36" ], [ "Iceland (Ísland)", "is", "354" ], [ "India (भारत)", "in", "91" ], [ "Indonesia", "id", "62" ], [ "Iran (‫ایران‬‎)", "ir", "98" ], [ "Iraq (‫العراق‬‎)", "iq", "964" ], [ "Ireland", "ie", "353" ], [ "Israel (‫ישראל‬‎)", "il", "972" ], [ "Italy (Italia)", "it", "39", 0 ], [ "Jamaica", "jm", "1876" ], [ "Japan (日本)", "jp", "81" ], [ "Jordan (‫الأردن‬‎)", "jo", "962" ], [ "Kazakhstan (Казахстан)", "kz", "7", 1 ], [ "Kenya", "ke", "254" ], [ "Kiribati", "ki", "686" ], [ "Kuwait (‫الكويت‬‎)", "kw", "965" ], [ "Kyrgyzstan (Кыргызстан)", "kg", "996" ], [ "Laos (ລາວ)", "la", "856" ], [ "Latvia (Latvija)", "lv", "371" ], [ "Lebanon (‫لبنان‬‎)", "lb", "961" ], [ "Lesotho", "ls", "266" ], [ "Liberia", "lr", "231" ], [ "Libya (‫ليبيا‬‎)", "ly", "218" ], [ "Liechtenstein", "li", "423" ], [ "Lithuania (Lietuva)", "lt", "370" ], [ "Luxembourg", "lu", "352" ], [ "Macau (澳門)", "mo", "853" ], [ "Macedonia (FYROM) (Македонија)", "mk", "389" ], [ "Madagascar (Madagasikara)", "mg", "261" ], [ "Malawi", "mw", "265" ], [ "Malaysia", "my", "60" ], [ "Maldives", "mv", "960" ], [ "Mali", "ml", "223" ], [ "Malta", "mt", "356" ], [ "Marshall Islands", "mh", "692" ], [ "Martinique", "mq", "596" ], [ "Mauritania (‫موريتانيا‬‎)", "mr", "222" ], [ "Mauritius (Moris)", "mu", "230" ], [ "Mexico (México)", "mx", "52" ], [ "Micronesia", "fm", "691" ], [ "Moldova (Republica Moldova)", "md", "373" ], [ "Monaco", "mc", "377" ], [ "Mongolia (Монгол)", "mn", "976" ], [ "Montenegro (Crna Gora)", "me", "382" ], [ "Montserrat", "ms", "1664" ], [ "Morocco (‫المغرب‬‎)", "ma", "212" ], [ "Mozambique (Moçambique)", "mz", "258" ], [ "Myanmar (Burma) (မြန်မာ)", "mm", "95" ], [ "Namibia (Namibië)", "na", "264" ], [ "Nauru", "nr", "674" ], [ "Nepal (नेपाल)", "np", "977" ], [ "Netherlands (Nederland)", "nl", "31" ], [ "New Caledonia (Nouvelle-Calédonie)", "nc", "687" ], [ "New Zealand", "nz", "64" ], [ "Nicaragua", "ni", "505" ], [ "Niger (Nijar)", "ne", "227" ], [ "Nigeria", "ng", "234" ], [ "Niue", "nu", "683" ], [ "Norfolk Island", "nf", "672" ], [ "North Korea (조선 민주주의 인민 공화국)", "kp", "850" ], [ "Northern Mariana Islands", "mp", "1670" ], [ "Norway (Norge)", "no", "47" ], [ "Oman (‫عُمان‬‎)", "om", "968" ], [ "Pakistan (‫پاکستان‬‎)", "pk", "92" ], [ "Palau", "pw", "680" ], [ "Palestine (‫فلسطين‬‎)", "ps", "970" ], [ "Panama (Panamá)", "pa", "507" ], [ "Papua New Guinea", "pg", "675" ], [ "Paraguay", "py", "595" ], [ "Peru (Perú)", "pe", "51" ], [ "Philippines", "ph", "63" ], [ "Poland (Polska)", "pl", "48" ], [ "Portugal", "pt", "351" ], [ "Puerto Rico", "pr", "1", 3, [ "787", "939" ] ], [ "Qatar (‫قطر‬‎)", "qa", "974" ], [ "Réunion (La Réunion)", "re", "262" ], [ "Romania (România)", "ro", "40" ], [ "Russia (Россия)", "ru", "7", 0 ], [ "Rwanda", "rw", "250" ], [ "Saint Barthélemy (Saint-Barthélemy)", "bl", "590", 1 ], [ "Saint Helena", "sh", "290" ], [ "Saint Kitts and Nevis", "kn", "1869" ], [ "Saint Lucia", "lc", "1758" ], [ "Saint Martin (Saint-Martin (partie française))", "mf", "590", 2 ], [ "Saint Pierre and Miquelon (Saint-Pierre-et-Miquelon)", "pm", "508" ], [ "Saint Vincent and the Grenadines", "vc", "1784" ], [ "Samoa", "ws", "685" ], [ "San Marino", "sm", "378" ], [ "São Tomé and Príncipe (São Tomé e Príncipe)", "st", "239" ], [ "Saudi Arabia (‫المملكة العربية السعودية‬‎)", "sa", "966" ], [ "Senegal (Sénégal)", "sn", "221" ], [ "Serbia (Србија)", "rs", "381" ], [ "Seychelles", "sc", "248" ], [ "Sierra Leone", "sl", "232" ], [ "Singapore", "sg", "65" ], [ "Sint Maarten", "sx", "1721" ], [ "Slovakia (Slovensko)", "sk", "421" ], [ "Slovenia (Slovenija)", "si", "386" ], [ "Solomon Islands", "sb", "677" ], [ "Somalia (Soomaaliya)", "so", "252" ], [ "South Africa", "za", "27" ], [ "South Korea (대한민국)", "kr", "82" ], [ "South Sudan (‫جنوب السودان‬‎)", "ss", "211" ], [ "Spain (España)", "es", "34" ], [ "Sri Lanka (ශ්‍රී ලංකාව)", "lk", "94" ], [ "Sudan (‫السودان‬‎)", "sd", "249" ], [ "Suriname", "sr", "597" ], [ "Swaziland", "sz", "268" ], [ "Sweden (Sverige)", "se", "46" ], [ "Switzerland (Schweiz)", "ch", "41" ], [ "Syria (‫سوريا‬‎)", "sy", "963" ], [ "Taiwan (台灣)", "tw", "886" ], [ "Tajikistan", "tj", "992" ], [ "Tanzania", "tz", "255" ], [ "Thailand (ไทย)", "th", "66" ], [ "Timor-Leste", "tl", "670" ], [ "Togo", "tg", "228" ], [ "Tokelau", "tk", "690" ], [ "Tonga", "to", "676" ], [ "Trinidad and Tobago", "tt", "1868" ], [ "Tunisia (‫تونس‬‎)", "tn", "216" ], [ "Turkey (Türkiye)", "tr", "90" ], [ "Turkmenistan", "tm", "993" ], [ "Turks and Caicos Islands", "tc", "1649" ], [ "Tuvalu", "tv", "688" ], [ "U.S. Virgin Islands", "vi", "1340" ], [ "Uganda", "ug", "256" ], [ "Ukraine (Україна)", "ua", "380" ], [ "United Arab Emirates (‫الإمارات العربية المتحدة‬‎)", "ae", "971" ], [ "United Kingdom", "gb", "44" ], [ "United States", "us", "1", 0 ], [ "Uruguay", "uy", "598" ], [ "Uzbekistan (Oʻzbekiston)", "uz", "998" ], [ "Vanuatu", "vu", "678" ], [ "Vatican City (Città del Vaticano)", "va", "39", 1 ], [ "Venezuela", "ve", "58" ], [ "Vietnam (Việt Nam)", "vn", "84" ], [ "Wallis and Futuna", "wf", "681" ], [ "Yemen (‫اليمن‬‎)", "ye", "967" ], [ "Zambia", "zm", "260" ], [ "Zimbabwe", "zw", "263" ] ];
+    var allCountries = [ [ "Afghanistan (‫افغانستان‬‎)", "af", "93" ], [ "Albania (Shqipëri)", "al", "355" ], [ "Algeria (‫الجزائر‬‎)", "dz", "213" ], [ "American Samoa", "as", "1684" ], [ "Andorra", "ad", "376" ], [ "Angola", "ao", "244" ], [ "Anguilla", "ai", "1264" ], [ "Antigua and Barbuda", "ag", "1268" ], [ "Argentina", "ar", "54" ], [ "Armenia (Հայաստան)", "am", "374" ], [ "Aruba", "aw", "297" ], [ "Australia", "au", "61" ], [ "Austria (Österreich)", "at", "43" ], [ "Azerbaijan (Azərbaycan)", "az", "994" ], [ "Bahamas", "bs", "1242" ], [ "Bahrain (‫البحرين‬‎)", "bh", "973" ], [ "Bangladesh (বাংলাদেশ)", "bd", "880" ], [ "Barbados", "bb", "1246" ], [ "Belarus (Беларусь)", "by", "375" ], [ "Belgium (België)", "be", "32" ], [ "Belize", "bz", "501" ], [ "Benin (Bénin)", "bj", "229" ], [ "Bermuda", "bm", "1441" ], [ "Bhutan (འབྲུག)", "bt", "975" ], [ "Bolivia", "bo", "591" ], [ "Bosnia and Herzegovina (Босна и Херцеговина)", "ba", "387" ], [ "Botswana", "bw", "267" ], [ "Brazil (Brasil)", "br", "55" ], [ "British Indian Ocean Territory", "io", "246" ], [ "British Virgin Islands", "vg", "1284" ], [ "Brunei", "bn", "673" ], [ "Bulgaria (България)", "bg", "359" ], [ "Burkina Faso", "bf", "226" ], [ "Burundi (Uburundi)", "bi", "257" ], [ "Cambodia (កម្ពុជា)", "kh", "855" ], [ "Cameroon (Cameroun)", "cm", "237" ], [ "Canada", "ca", "1", 1, [ "204", "226", "236", "249", "250", "289", "306", "343", "365", "387", "403", "416", "418", "431", "437", "438", "450", "506", "514", "519", "548", "579", "581", "587", "604", "613", "639", "647", "672", "705", "709", "742", "778", "780", "782", "807", "819", "825", "867", "873", "902", "905" ] ], [ "Cape Verde (Kabu Verdi)", "cv", "238" ], [ "Caribbean Netherlands", "bq", "599", 1 ], [ "Cayman Islands", "ky", "1345" ], [ "Central African Republic (République centrafricaine)", "cf", "236" ], [ "Chad (Tchad)", "td", "235" ], [ "Chile", "cl", "56" ], [ "China (中国)", "cn", "86" ], [ "Colombia", "co", "57" ], [ "Comoros (‫جزر القمر‬‎)", "km", "269" ], [ "Congo (DRC) (Jamhuri ya Kidemokrasia ya Kongo)", "cd", "243" ], [ "Congo (Republic) (Congo-Brazzaville)", "cg", "242" ], [ "Cook Islands", "ck", "682" ], [ "Costa Rica", "cr", "506" ], [ "Côte d’Ivoire", "ci", "225" ], [ "Croatia (Hrvatska)", "hr", "385" ], [ "Cuba", "cu", "53" ], [ "Curaçao", "cw", "599", 0 ], [ "Cyprus (Κύπρος)", "cy", "357" ], [ "Czech Republic (Česká republika)", "cz", "420" ], [ "Denmark (Danmark)", "dk", "45" ], [ "Djibouti", "dj", "253" ], [ "Dominica", "dm", "1767" ], [ "Dominican Republic (República Dominicana)", "do", "1", 2, [ "809", "829", "849" ] ], [ "Ecuador", "ec", "593" ], [ "Egypt (‫مصر‬‎)", "eg", "20" ], [ "El Salvador", "sv", "503" ], [ "Equatorial Guinea (Guinea Ecuatorial)", "gq", "240" ], [ "Eritrea", "er", "291" ], [ "Estonia (Eesti)", "ee", "372" ], [ "Ethiopia", "et", "251" ], [ "Falkland Islands (Islas Malvinas)", "fk", "500" ], [ "Faroe Islands (Føroyar)", "fo", "298" ], [ "Fiji", "fj", "679" ], [ "Finland (Suomi)", "fi", "358" ], [ "France", "fr", "33" ], [ "French Guiana (Guyane française)", "gf", "594" ], [ "French Polynesia (Polynésie française)", "pf", "689" ], [ "Gabon", "ga", "241" ], [ "Gambia", "gm", "220" ], [ "Georgia (საქართველო)", "ge", "995" ], [ "Germany (Deutschland)", "de", "49" ], [ "Ghana (Gaana)", "gh", "233" ], [ "Gibraltar", "gi", "350" ], [ "Greece (Ελλάδα)", "gr", "30" ], [ "Greenland (Kalaallit Nunaat)", "gl", "299" ], [ "Grenada", "gd", "1473" ], [ "Guadeloupe", "gp", "590", 0 ], [ "Guam", "gu", "1671" ], [ "Guatemala", "gt", "502" ], [ "Guinea (Guinée)", "gn", "224" ], [ "Guinea-Bissau (Guiné Bissau)", "gw", "245" ], [ "Guyana", "gy", "592" ], [ "Haiti", "ht", "509" ], [ "Honduras", "hn", "504" ], [ "Hong Kong (香港)", "hk", "852" ], [ "Hungary (Magyarország)", "hu", "36" ], [ "Iceland (Ísland)", "is", "354" ], [ "India (भारत)", "in", "91" ], [ "Indonesia", "id", "62" ], [ "Iran (‫ایران‬‎)", "ir", "98" ], [ "Iraq (‫العراق‬‎)", "iq", "964" ], [ "Ireland", "ie", "353" ], [ "Israel (‫ישראל‬‎)", "il", "972" ], [ "Italy (Italia)", "it", "39", 0 ], [ "Jamaica", "jm", "1876" ], [ "Japan (日本)", "jp", "81" ], [ "Jordan (‫الأردن‬‎)", "jo", "962" ], [ "Kazakhstan (Казахстан)", "kz", "7", 1 ], [ "Kenya", "ke", "254" ], [ "Kiribati", "ki", "686" ], [ "Kuwait (‫الكويت‬‎)", "kw", "965" ], [ "Kyrgyzstan (Кыргызстан)", "kg", "996" ], [ "Laos (ລາວ)", "la", "856" ], [ "Latvia (Latvija)", "lv", "371" ], [ "Lebanon (‫لبنان‬‎)", "lb", "961" ], [ "Lesotho", "ls", "266" ], [ "Liberia", "lr", "231" ], [ "Libya (‫ليبيا‬‎)", "ly", "218" ], [ "Liechtenstein", "li", "423" ], [ "Lithuania (Lietuva)", "lt", "370" ], [ "Luxembourg", "lu", "352" ], [ "Macau (澳門)", "mo", "853" ], [ "Macedonia (FYROM) (Македонија)", "mk", "389" ], [ "Madagascar (Madagasikara)", "mg", "261" ], [ "Malawi", "mw", "265" ], [ "Malaysia", "my", "60" ], [ "Maldives", "mv", "960" ], [ "Mali", "ml", "223" ], [ "Malta", "mt", "356" ], [ "Marshall Islands", "mh", "692" ], [ "Martinique", "mq", "596" ], [ "Mauritania (‫موريتانيا‬‎)", "mr", "222" ], [ "Mauritius (Moris)", "mu", "230" ], [ "Mexico (México)", "mx", "52" ], [ "Micronesia", "fm", "691" ], [ "Moldova (Republica Moldova)", "md", "373" ], [ "Monaco", "mc", "377" ], [ "Mongolia (Монгол)", "mn", "976" ], [ "Montenegro (Crna Gora)", "me", "382" ], [ "Montserrat", "ms", "1664" ], [ "Morocco (‫المغرب‬‎)", "ma", "212" ], [ "Mozambique (Moçambique)", "mz", "258" ], [ "Myanmar (Burma) (မြန်မာ)", "mm", "95" ], [ "Namibia (Namibië)", "na", "264" ], [ "Nauru", "nr", "674" ], [ "Nepal (नेपाल)", "np", "977" ], [ "Netherlands (Nederland)", "nl", "31" ], [ "New Caledonia (Nouvelle-Calédonie)", "nc", "687" ], [ "New Zealand", "nz", "64" ], [ "Nicaragua", "ni", "505" ], [ "Niger (Nijar)", "ne", "227" ], [ "Nigeria", "ng", "234" ], [ "Niue", "nu", "683" ], [ "Norfolk Island", "nf", "672" ], [ "North Korea (조선 민주주의 인민 공화국)", "kp", "850" ], [ "Northern Mariana Islands", "mp", "1670" ], [ "Norway (Norge)", "no", "47" ], [ "Oman (‫عُمان‬‎)", "om", "968" ], [ "Pakistan (‫پاکستان‬‎)", "pk", "92" ], [ "Palau", "pw", "680" ], [ "Palestine (‫فلسطين‬‎)", "ps", "970" ], [ "Panama (Panamá)", "pa", "507" ], [ "Papua New Guinea", "pg", "675" ], [ "Paraguay", "py", "595" ], [ "Peru (Perú)", "pe", "51" ], [ "Philippines", "ph", "63" ], [ "Poland (Polska)", "pl", "48" ], [ "Portugal", "pt", "351" ], [ "Puerto Rico", "pr", "1", 3, [ "787", "939" ] ], [ "Qatar (‫قطر‬‎)", "qa", "974" ], [ "Réunion (La Réunion)", "re", "262" ], [ "Romania (România)", "ro", "40" ], [ "Russia (Россия)", "ru", "7", 0 ], [ "Rwanda", "rw", "250" ], [ "Saint Barthélemy (Saint-Barthélemy)", "bl", "590", 1 ], [ "Saint Helena", "sh", "290" ], [ "Saint Kitts and Nevis", "kn", "1869" ], [ "Saint Lucia", "lc", "1758" ], [ "Saint Martin (Saint-Martin (partie française))", "mf", "590", 2 ], [ "Saint Pierre and Miquelon (Saint-Pierre-et-Miquelon)", "pm", "508" ], [ "Saint Vincent and the Grenadines", "vc", "1784" ], [ "Samoa", "ws", "685" ], [ "San Marino", "sm", "378" ], [ "São Tomé and Príncipe (São Tomé e Príncipe)", "st", "239" ], [ "Saudi Arabia (‫المملكة العربية السعودية‬‎)", "sa", "966" ], [ "Senegal (Sénégal)", "sn", "221" ], [ "Serbia (Србија)", "rs", "381" ], [ "Seychelles", "sc", "248" ], [ "Sierra Leone", "sl", "232" ], [ "Singapore", "sg", "65" ], [ "Sint Maarten", "sx", "1721" ], [ "Slovakia (Slovensko)", "sk", "421" ], [ "Slovenia (Slovenija)", "si", "386" ], [ "Solomon Islands", "sb", "677" ], [ "Somalia (Soomaaliya)", "so", "252" ], [ "South Africa", "za", "27" ], [ "South Korea (대한민국)", "kr", "82" ], [ "South Sudan (‫جنوب السودان‬‎)", "ss", "211" ], [ "Spain (España)", "es", "34" ], [ "Sri Lanka (ශ්‍රී ලංකාව)", "lk", "94" ], [ "Sudan (‫السودان‬‎)", "sd", "249" ], [ "Suriname", "sr", "597" ], [ "Swaziland", "sz", "268" ], [ "Sweden (Sverige)", "se", "46" ], [ "Switzerland (Schweiz)", "ch", "41" ], [ "Syria (‫سوريا‬‎)", "sy", "963" ], [ "Taiwan (台灣)", "tw", "886" ], [ "Tajikistan", "tj", "992" ], [ "Tanzania", "tz", "255" ], [ "Thailand (ไทย)", "th", "66" ], [ "Timor-Leste", "tl", "670" ], [ "Togo", "tg", "228" ], [ "Tokelau", "tk", "690" ], [ "Tonga", "to", "676" ], [ "Trinidad and Tobago", "tt", "1868" ], [ "Tunisia (‫تونس‬‎)", "tn", "216" ], [ "Turkey (Türkiye)", "tr", "90" ], [ "Turkmenistan", "tm", "993" ], [ "Turks and Caicos Islands", "tc", "1649" ], [ "Tuvalu", "tv", "688" ], [ "U.S. Virgin Islands", "vi", "1340" ], [ "Uganda", "ug", "256" ], [ "Ukraine (Україна)", "ua", "380" ], [ "United Arab Emirates (‫الإمارات العربية المتحدة‬‎)", "ae", "971" ], [ "United Kingdom", "gb", "44" ], [ "United States", "us", "1", 0 ], [ "Uruguay", "uy", "598" ], [ "Uzbekistan (Oʻzbekiston)", "uz", "998" ], [ "Vanuatu", "vu", "678" ], [ "Vatican City (Città del Vaticano)", "va", "39", 1 ], [ "Venezuela", "ve", "58" ], [ "Vietnam (Việt Nam)", "vn", "84" ], [ "Wallis and Futuna", "wf", "681" ], [ "Yemen (‫اليمن‬‎)", "ye", "967" ], [ "Zambia", "zm", "260" ], [ "Zimbabwe", "zw", "263" ] ];
     // loop over all of the countries above
     for (var i = 0; i < allCountries.length; i++) {
         var c = allCountries[i];

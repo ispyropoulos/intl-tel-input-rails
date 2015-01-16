@@ -33,4 +33,4 @@ Add the following directive to your Stylesheet manifest file:
 
 ## Versioning
 
-intl-tel-input-rails 3.6.0.1 == intl-tel-input 3.6.0
+intl-tel-input-rails 4.0.0 == intl-tel-input 4.0.0
