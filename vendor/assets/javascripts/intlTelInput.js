@@ -1,5 +1,5 @@
 /*
-International Telephone Input v5.8.7
+International Telephone Input v6.0.4
 https://github.com/Bluefieldscom/intl-tel-input.git
 */
 // wrap in UMD - see https://github.com/umdjs/umd/blob/master/jqueryPlugin.js
@@ -20,14 +20,14 @@ https://github.com/Bluefieldscom/intl-tel-input.git
         allowExtensions: false,
         // automatically format the number according to the selected country
         autoFormat: true,
-        // add or remove input placeholder with an example number for the selected country
-        autoPlaceholder: true,
         // if there is just a dial code in the input: remove it on blur, and re-add it on focus
         autoHideDialCode: true,
+        // add or remove input placeholder with an example number for the selected country
+        autoPlaceholder: true,
         // default country
         defaultCountry: "",
-        // token for ipinfo - required for https or over 1000 daily page views support
-        ipinfoToken: "",
+        // geoIp lookup function
+        geoIpLookup: null,
         // don't insert international dial codes
         nationalMode: true,
         // number type to use for placeholders
@@ -50,6 +50,7 @@ https://github.com/Bluefieldscom/intl-tel-input.git
         NINE: 57,
         SPACE: 32,
         BSPACE: 8,
+        TAB: 9,
         DEL: 46,
         CTRL: 17,
         CMD1: 91,
@@ -174,13 +175,15 @@ https://github.com/Bluefieldscom/intl-tel-input.git
             this.telInput.wrap($("<div>", {
                 "class": "intl-tel-input"
             }));
-            var flagsContainer = $("<div>", {
+            this.flagsContainer = $("<div>", {
                 "class": "flag-dropdown"
-            }).insertAfter(this.telInput);
+            }).insertBefore(this.telInput);
             // currently selected flag (displayed to left of input)
             var selectedFlag = $("<div>", {
+                // make element focusable and tab naviagable
+                tabindex: "0",
                 "class": "selected-flag"
-            }).appendTo(flagsContainer);
+            }).appendTo(this.flagsContainer);
             this.selectedFlagInner = $("<div>", {
                 "class": "iti-flag"
             }).appendTo(selectedFlag);
@@ -192,11 +195,13 @@ https://github.com/Bluefieldscom/intl-tel-input.git
             // mobile is just a native select element
             // desktop is a proper list containing: preferred countries, then divider, then all countries
             if (this.isMobile) {
-                this.countryList = $("<select>").appendTo(flagsContainer);
+                this.countryList = $("<select>", {
+                    "class": "iti-mobile-select"
+                }).appendTo(this.flagsContainer);
             } else {
                 this.countryList = $("<ul>", {
                     "class": "country-list v-hide"
-                }).appendTo(flagsContainer);
+                }).appendTo(this.flagsContainer);
                 if (this.preferredCountries.length && !this.isMobile) {
                     this._appendListItems(this.preferredCountries, "preferred");
                     $("<li>", {
@@ -301,6 +306,21 @@ https://github.com/Bluefieldscom/intl-tel-input.git
                     }
                 });
             }
+            // open dropdown list if currently focused
+            this.flagsContainer.on("keydown" + that.ns, function(e) {
+                var isDropdownHidden = that.countryList.hasClass("hide");
+                if (isDropdownHidden && (e.which == keys.UP || e.which == keys.DOWN || e.which == keys.SPACE || e.which == keys.ENTER)) {
+                    // prevent form from being submitted if "ENTER" was pressed
+                    e.preventDefault();
+                    // prevent event from being handled again by document
+                    e.stopPropagation();
+                    that._showDropdown();
+                }
+                // allow navigation from dropdown to input on TAB
+                if (e.which == keys.TAB) {
+                    that._closeDropdown();
+                }
+            });
         },
         _initRequests: function() {
             var that = this;
@@ -340,22 +360,19 @@ https://github.com/Bluefieldscom/intl-tel-input.git
             } else if (!$.fn[pluginName].startedLoadingAutoCountry) {
                 // don't do this twice!
                 $.fn[pluginName].startedLoadingAutoCountry = true;
-                var ipinfoURL = "//ipinfo.io";
-                if (this.options.ipinfoToken) {
-                    ipinfoURL += "?token=" + this.options.ipinfoToken;
+                if (typeof this.options.geoIpLookup === "function") {
+                    this.options.geoIpLookup(function(countryCode) {
+                        $.fn[pluginName].autoCountry = countryCode.toLowerCase();
+                        if ($.cookie) {
+                            $.cookie("itiAutoCountry", $.fn[pluginName].autoCountry, {
+                                path: "/"
+                            });
+                        }
+                        // tell all instances the auto country is ready
+                        // TODO: this should just be the current instances
+                        $(".intl-tel-input input").intlTelInput("autoCountryLoaded");
+                    });
                 }
-                // dont bother with the success function arg - instead use always() as should still set a defaultCountry even if the lookup fails
-                $.get(ipinfoURL, function() {}, "jsonp").always(function(resp) {
-                    $.fn[pluginName].autoCountry = resp && resp.country ? resp.country.toLowerCase() : "";
-                    if ($.cookie) {
-                        $.cookie("itiAutoCountry", $.fn[pluginName].autoCountry, {
-                            path: "/"
-                        });
-                    }
-                    // tell all instances the auto country is ready
-                    // TODO: this should just be the current instances
-                    $(".intl-tel-input input").intlTelInput("autoCountryLoaded");
-                });
             }
         },
         _initKeyListeners: function() {
@@ -937,7 +954,7 @@ https://github.com/Bluefieldscom/intl-tel-input.git
         /********************
    *  PUBLIC METHODS
    ********************/
-        // this is called when the ipinfo call returns
+        // this is called when the geoip call returns
         autoCountryLoaded: function() {
             if (this.options.defaultCountry == "auto") {
                 this.options.defaultCountry = $.fn[pluginName].autoCountry;
@@ -1108,6 +1125,7 @@ https://github.com/Bluefieldscom/intl-tel-input.git
     $.fn[pluginName].getCountryData = function() {
         return allCountries;
     };
+    $.fn[pluginName].version = "6.0.4";
     // Tell JSHint to ignore this warning: "character may get silently deleted by one or more browsers"
     // jshint -W100
     // Array of country objects for the flag dropdown.

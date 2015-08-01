@@ -3,6 +3,8 @@
 This gem is a simple wrapper for the [intl-tel-input](https://github.com/Bluefieldscom/intl-tel-input)
 library.
 
+[![Gem Version](https://badge.fury.io/rb/intl-tel-input-rails@2x.png)](http://badge.fury.io/rb/intl-tel-input-rails)
+
 ## Installation
 
 Add this line to your application's Gemfile:
@@ -33,4 +35,4 @@ Add the following directive to your Stylesheet manifest file:
 
 ## Versioning
 
-intl-tel-input-rails 5.8.7.1 == intl-tel-input 5.8.7
+intl-tel-input-rails 6.0.4 == intl-tel-input 6.0.4
