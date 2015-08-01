@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.summary       = %q{intl-tel-input for the Rails asset pipeline.}
   spec.description   = <<-EOF
     A jQuery plugin for entering and validating international telephone numbers.
-    This gem allows for its easy inclusion into the rails asset pipeline.
+    This gem allows for its easy inclusion into the Rails asset pipeline.
   EOF
   spec.homepage      = "https://github.com/ispyropoulos/intl-tel-input-rails"
   spec.license       = "MIT"
