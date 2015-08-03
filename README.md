@@ -28,11 +28,13 @@ Add the following directive to your Javascript manifest file:
 Coffeescript flavor:
 
     #= require intlTelInput
-    
+
 Add the following directive to your Stylesheet manifest file:
 
     @import "intlTelInput";
 
 ## Versioning
 
-intl-tel-input-rails 6.0.4 == intl-tel-input 6.0.4
+intl-tel-input-rails 6.0.4.x == intl-tel-input 6.0.4
+
+Where x is used for gem fixes while keeping the same original library version.
