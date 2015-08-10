@@ -31,7 +31,7 @@ Coffeescript flavor:
 
 Add the following directive to your Stylesheet manifest file:
 
-    @import "intlTelInput";
+    *= require intlTelInput
 
 ## Versioning
 
