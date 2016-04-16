@@ -29,9 +29,24 @@ Coffeescript flavor:
 
     #= require intlTelInput
 
-Add the following directive to your Stylesheet manifest file:
+If you need to initialize the plugin with the `utilsScript` (enable formatting/validation), add one more line:
 
+    //= require libphonenumber/utils
+
+Add the following directive to your Stylesheet manifest file:
+    
     @import "intlTelInput";
+
+Initialize the plugin when needed. Example:
+
+```js
+$("#id_of_your_input").intlTelInput({
+    formatOnInit: true,
+    separateDialCode: true,
+    utilsScript: "assets/libphonenumber/utils.js"
+});
+```
+More options for [initializing the plugin](https://github.com/jackocnr/intl-tel-input#options). You can ignore the `utilsScript` option if you have already required the `libphonenumber/utils` as stated above.
 
 ## Versioning
 
