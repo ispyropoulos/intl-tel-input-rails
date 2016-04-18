@@ -1,6 +1,6 @@
 # intl-tel-input-rails
 
-This gem is a simple wrapper for the [intl-tel-input](https://github.com/Bluefieldscom/intl-tel-input)
+This gem is a simple wrapper for the [intl-tel-input](https://github.com/jackocnr/intl-tel-input)
 library.
 
 [![Gem Version](https://badge.fury.io/rb/intl-tel-input-rails@2x.png)](http://badge.fury.io/rb/intl-tel-input-rails)
@@ -50,6 +50,6 @@ More options for [initializing the plugin](https://github.com/jackocnr/intl-tel-
 
 ## Versioning
 
-intl-tel-input-rails 6.0.4.x == intl-tel-input 6.0.4
+intl-tel-input-rails 8.4.9.x == intl-tel-input 8.4.9
 
 Where x is used for gem fixes while keeping the same original library version.
