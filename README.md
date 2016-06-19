@@ -50,6 +50,6 @@ More options for [initializing the plugin](https://github.com/jackocnr/intl-tel-
 
 ## Versioning
 
-intl-tel-input-rails 8.4.9.x == intl-tel-input 8.4.9
+intl-tel-input-rails 9.0.0.x == intl-tel-input 9.0.0
 
 Where x is used for gem fixes while keeping the same original library version.
