@@ -1,5 +1,5 @@
 /*
- * International Telephone Input v9.0.0
+ * International Telephone Input v9.0.4
  * https://github.com/jackocnr/intl-tel-input.git
  * Licensed under the MIT license
  */
@@ -418,7 +418,7 @@
                 that._updateFlagFromNumber(that.telInput.val());
             });
             // update flag on cut/paste events (now supported in all major browsers)
-            this.telInput.on("cut" + this.ns + " paste" + this.ns + " keyup" + this.ns, function() {
+            this.telInput.on("cut" + this.ns + " paste" + this.ns, function() {
                 // hack because "paste" event is fired before input is updated
                 setTimeout(function() {
                     that._updateFlagFromNumber(that.telInput.val());
@@ -750,7 +750,7 @@
             this._updateDialCode(listItem.attr("data-dial-code"), true);
             // focus the input
             this.telInput.focus();
-            // fix for FF and IE11 (with nationalMode=false i.e. auto inserting dial code), who try to put the cursor at the beginning the first time
+            // put cursor at end - this fix is required for FF and IE11 (with nationalMode=false i.e. auto inserting dial code), who try to put the cursor at the beginning the first time
             if (this.isGoodBrowser) {
                 var len = this.telInput.val().length;
                 this.telInput[0].setSelectionRange(len, len);
@@ -1057,7 +1057,7 @@
         }
     };
     // version
-    $.fn[pluginName].version = "9.0.0";
+    $.fn[pluginName].version = "9.0.4";
     // Tell JSHint to ignore this warning: "character may get silently deleted by one or more browsers"
     // jshint -W100
     // Array of country objects for the flag dropdown.
