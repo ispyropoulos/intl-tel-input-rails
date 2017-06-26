@@ -6,7 +6,7 @@ Gem::Specification.new do |spec|
   spec.name          = "intl-tel-input-rails"
   spec.version       = IntlTelInput::VERSION
   spec.authors       = ["Ilias Spyropoulos"]
-  spec.email         = ["ilias@testributor.com"]
+  spec.email         = ["ilias@heavymelon.com"]
   spec.summary       = %q{intl-tel-input for the Rails asset pipeline.}
   spec.description   = <<-EOF
     A jQuery plugin for entering and validating international telephone numbers.
