@@ -1,17 +1,6 @@
-/**
- * Variables declared here can be overridden by consuming applications, with
- * the help of the `!default` flag.
- *
- * @example
- *     // overriding $hoverColor
- *     $hoverColor: rgba(red, 0.05);
- *
- *     // overriding image path
- *     $flagsImagePath: "images/";
- *
- *     // import the scss file after the overrides
- *     @import "bower_component/intl-tel-input/src/css/intlTelInput";
- */
+// NOTE: by using !default on all variables, we're saying only declare the variable if it doesn't
+// already exist, which allows devs to declare these variables themselves and assign them any value
+// they want before importing this file
 
 // rgba is needed for the selected flag hover state to blend in with
 // the border-highlighting some browsers give the input on focus
@@ -44,7 +33,7 @@ $flagsImageName: "flags" !default;
 $flagsImageExtension: "png" !default;
 
 // enough space for them to click off to close
-$mobilePopupMargin: 30px;
+$mobilePopupMargin: 30px !default;
 
 .intl-tel-input {
   // need position on the container so the selected flag can be
@@ -181,6 +170,12 @@ $mobilePopupMargin: 30px;
 
     max-height: 200px;
     overflow-y: scroll;
+
+    // Fixes https://github.com/jackocnr/intl-tel-input/issues/765
+    // Apple still hasn't fixed the issue where setting overflow: scroll on a div element does not use inertia scrolling
+    // If this is not set, then the country list scroll stops moving after rasing a finger, and users report that scroll is slow
+    // Stackoverflow question about it: https://stackoverflow.com/questions/33601165/scrolling-slow-on-mobile-ios-when-using-overflowscroll
+    -webkit-overflow-scrolling: touch;
 
     // the divider below the preferred countries
     .divider {
@@ -332,7 +327,7 @@ $mobilePopupMargin: 30px;
   background-color: #DBDBDB;
   background-position: $flagWidth 0;
 
-  @media only screen and (-webkit-min-device-pixel-ratio: 2), only screen and (min--moz-device-pixel-ratio: 2), only screen and (-o-min-device-pixel-ratio: 2 / 1), only screen and (min-device-pixel-ratio: 2), only screen and (min-resolution: 192dpi), only screen and (min-resolution: 2dppx) {
+  @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
     background-image: image-url("#{$flagsImagePath}#{$flagsImageName}@2x.#{$flagsImageExtension}");
   }
 }
