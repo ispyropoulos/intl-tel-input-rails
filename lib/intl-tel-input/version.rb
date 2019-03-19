@@ -1,3 +1,3 @@
 module IntlTelInput
-  VERSION = '14.0.6'
+	VERSION = '15.0.1'
 end
