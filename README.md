@@ -40,6 +40,15 @@ Add the following directive to your Stylesheet manifest file:
 Initialize the plugin when needed. Example:
 
 ```js
+//Without jQuery
+var input = document.getElementById("#id_of_your_input");
+window.intlTelInput(input, {
+	formatOnInit: true,
+	separateDialCode: true,
+	utilsScript: "assets/libphonenumber/utils.js"
+});
+
+// With jQuery
 $("#id_of_your_input").intlTelInput({
     formatOnInit: true,
     separateDialCode: true,

@@ -1,6 +1,6 @@
 module IntlTelInput
-  module Rails
-    class Engine < ::Rails::Engine
-    end
-  end
+	module Rails
+		class Engine < ::Rails::Engine
+		end
+	end
 end
